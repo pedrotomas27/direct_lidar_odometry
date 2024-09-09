@@ -1,0 +1,82 @@
+<!--
+
+  Copyright (c) 2022, University of California, Los Angeles
+
+  Authors: Kenny J. Chen, Brett T. Lopez
+  Contact: kennyjchen@ucla.edu, btlopez@ucla.edu
+
+-->
+
+<launch>
+
+  <arg name="robot_namespace" default="robot"/>
+  <param name="use_sim_time" value="true" />
+  <arg name="pointcloud_topic" default="lidar"/>
+  <arg name="imu_topic" default="imu"/>
+  
+
+
+    <!-- Launch Velodyne point cloud transformation nodelet -->
+  
+   <node pkg="tf" type="static_transform_publisher" name="lidar_0_broadcaster" args="0.15 0 0.13 0 0 0 base lidar_0 0.1" />
+  <node pkg="tf" type="static_transform_publisher" name="rslidar_broadcaster" args="0.15 0 0.13 0 0.309017 0 base rslidar 0.1" />
+  <node pkg="tf" type="static_transform_publisher" name="camera_link_broadcaster" args="0.16 0 0.06 0 0 0 base camera_link 0.1" />
+  <node pkg="python_executables" type="Unitree_tranformer.py" name="Unitree_tranformer" output="screen" />
+  <node pkg="python_executables" type="navtogps.py" name="navtogps" output="screen" />
+  <node pkg="python_executables" type="imu_filter.py" name="imu_filter" output="screen" />
+  <node pkg="geodetic_utils" type="gps_to_pose_conversion_node" name="gps_to_pose_conversion_node" output="screen" />
+  <node pkg="geodetic_utils" type="set_gps_reference_node" name="set_gps_reference_node" output="screen" />	
+  <!-- DLO Odometry Node -->
+  <remap from="~pointcloud" to="/rslidar_points"/>
+  <remap from="~imu" to="/filtered_imu_data"/>
+  <node ns="$(arg robot_namespace)" name="dlo_odom" pkg="direct_lidar_odometry" type="dlo_odom_node" output="screen" clear_params="true">
+    
+    
+    <!-- Load parameters -->
+    <rosparam file="$(find direct_lidar_odometry)/cfg/dlo.yaml" command="load"/>
+    <rosparam file="$(find direct_lidar_odometry)/cfg/params.yaml" command="load"/>
+
+    
+
+    <!-- Publications -->
+    <remap from="~odom" to="dlo/odom_node/odom"/>
+    <remap from="~pose" to="dlo/odom_node/pose"/>
+    <remap from="~kfs" to="dlo/odom_node/odom/keyframe"/>
+    <remap from="~keyframe" to="dlo/odom_node/pointcloud/keyframe"/>
+
+  </node>
+  
+  <!-- DLO Mapping Node -->
+  <node ns="$(arg robot_namespace)" name="dlo_map" pkg="direct_lidar_odometry" type="dlo_map_node" output="screen" clear_params="true">
+
+    <!-- Load parameters -->
+    <rosparam file="$(find direct_lidar_odometry)/cfg/dlo.yaml" command="load"/>
+
+    <!-- Subscriptions -->
+    <remap from="~keyframes" to="dlo/odom_node/pointcloud/keyframe"/>
+
+    <!-- Publications -->
+    <remap from="~map" to="dlo/map_node/map"/>
+
+  </node>
+   <node pkg="imu_filter_madgwick" type="imu_filter_node" name="imu_filter_madgwick" output="screen">
+        <param name="use_mag" value="false"/>
+        <param name="publish_tf" value="false"/>
+        <param name="world_frame" value="enu"/>
+        <param name="base_link_frame" value="base"/>
+        <remap from="imu/data_raw" to="/filtered_imu_data"/>
+        <remap from="imu/data" to="/madgwick_filtered_imu"/>
+    </node>
+
+    <!-- Add imu_complementary_filter node -->
+    <node pkg="imu_complementary_filter" type="complementary_filter_node" name="imu_complementary_filter" output="screen">
+        <param name="use_mag" value="false"/>
+        <param name="publish_tf" value="false"/>
+        <param name="world_frame" value="enu"/>
+        <param name="base_link_frame" value="base"/>
+        <remap from="imu/data_raw" to="/madgwick_filtered_imu"/>
+        <remap from="imu/data" to="/filtered_imu"/>
+    </node>
+  <!-- RViz -->
+  <node pkg="rviz" type="rviz" name="dlo_rviz" args="-d $(find direct_lidar_odometry)/launch/dlo.rviz"/>
+

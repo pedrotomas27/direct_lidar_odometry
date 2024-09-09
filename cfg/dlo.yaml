@@ -18,7 +18,7 @@ dlo:
 
   odomNode:
     odom_frame: odom
-    child_frame: base_link
+    child_frame: imu_link
 
   mapNode:
     publishFullMap: true
